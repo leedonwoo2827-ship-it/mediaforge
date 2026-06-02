@@ -106,6 +106,9 @@ def bundle_status(name: str) -> dict:
     return {
         "bundle": name,
         "ok": True,
+        "path": str(root.resolve()),
+        "script_dir": str((root / "script").resolve()),
+        "images_dir": str((root / "images").resolve()),
         "chapter": chap,
         "title": title,
         "has_script": bool(script_path),

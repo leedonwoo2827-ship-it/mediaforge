@@ -60,6 +60,12 @@
   .toast.bad { border-left-color:var(--bad); }
   video { width:100%; border-radius:10px; background:#000; }
   h3 { margin:0 0 10px; }
+  .pathbox { background:#0a0c10; border:1px solid var(--line); border-radius:8px; padding:10px 12px;
+             margin-bottom:10px; font-size:13px; }
+  .pathbox .ph { color:var(--mut); margin-bottom:4px; }
+  .pathbox code { color:#cfe0ff; background:#161a22; padding:2px 6px; border-radius:5px;
+                  font-family:Consolas,monospace; word-break:break-all; }
+  .pathbox button { padding:3px 9px; font-size:12px; margin-left:6px; }
 </style>
 </head>
 <body>
@@ -93,6 +99,7 @@
   <section class="panel active" id="p-script">
     <div class="card">
       <h3>대본 JSON</h3>
+      <div id="pathBox" class="pathbox" style="display:none"></div>
       <p class="muted">Claude/scriptforge가 만든 <code>chNN_script.json</code>을 번들의 <code>script/</code> 폴더에 넣으세요. 인식되면 아래 씬 목록이 표시됩니다.</p>
       <div id="scriptInfo" class="muted">번들을 선택하세요.</div>
       <table id="sceneTable" style="display:none"><thead>
@@ -151,6 +158,8 @@ const $ = s => document.querySelector(s);
 let state = { bundle:null, status:null, poll:null };
 
 function toast(msg, bad){ const t=document.createElement('div'); t.className='toast'+(bad?' bad':''); t.textContent=msg; document.body.appendChild(t); setTimeout(()=>t.remove(), 4200); }
+function copyPath(id){ const el=document.getElementById(id); if(!el) return;
+  navigator.clipboard.writeText(el.textContent).then(()=>toast('경로 복사됨: '+el.textContent)).catch(()=>toast('복사 실패',true)); }
 function setLog(lines){ const el=$('#log'); el.textContent=(lines||[]).join('\n'); el.scrollTop=el.scrollHeight; }
 function setBar(c,t){ $('#barFill').style.width = (t? Math.round(100*c/t):0)+'%'; }
 
@@ -175,6 +184,13 @@ async function refresh(){
 }
 
 function renderScript(st){
+  const pb=$('#pathBox');
+  if(st.path){
+    pb.style.display='block';
+    pb.innerHTML=`<div class="ph">📁 이 번들 위치 — 여기에 파일을 넣으세요</div>
+      <div>대본 JSON → <code id="pScript">${st.script_dir}</code><button onclick="copyPath('pScript')">복사</button></div>
+      <div style="margin-top:4px">이미지 → <code id="pImg">${st.images_dir}</code><button onclick="copyPath('pImg')">복사</button></div>`;
+  } else { pb.style.display='none'; }
   const info=$('#scriptInfo'), tbl=$('#sceneTable'), tb=tbl.querySelector('tbody');
   if(!st.has_script){ info.textContent='대본 JSON이 없습니다. script/ 폴더에 chNN_script.json을 넣으세요.'; tbl.style.display='none'; return; }
   info.innerHTML=`✅ <b>${st.title||'(제목 없음)'}</b> · 챕터 ${st.chapter} · 씬 ${st.scene_count}개`;
