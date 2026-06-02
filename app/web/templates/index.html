@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>mediaforge — 이미지→음성→MP4</title>
+<style>
+  :root { --bg:#0f1115; --card:#1a1d24; --line:#2a2f3a; --fg:#e6e9ef; --mut:#9aa3b2;
+          --acc:#4f8cff; --ok:#37c871; --bad:#ff5d5d; --warn:#f5b942; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg);
+         font-family:"Segoe UI",system-ui,sans-serif; font-size:14px; }
+  header { display:flex; align-items:center; gap:14px; padding:12px 18px;
+           border-bottom:1px solid var(--line); background:var(--card); position:sticky; top:0; z-index:5; }
+  header h1 { font-size:18px; margin:0; letter-spacing:.5px; }
+  .grow { flex:1; }
+  select, button, input { font:inherit; color:var(--fg); background:#222632;
+           border:1px solid var(--line); border-radius:8px; padding:7px 11px; }
+  button { cursor:pointer; }
+  button:hover { border-color:var(--acc); }
+  button.primary { background:var(--acc); border-color:var(--acc); color:#fff; font-weight:600; }
+  button.big { padding:9px 16px; font-size:15px; }
+  button:disabled { opacity:.5; cursor:not-allowed; }
+  a { color:var(--acc); }
+  .steps { display:flex; gap:8px; align-items:center; padding:10px 18px;
+           border-bottom:1px solid var(--line); background:#13161c; }
+  .step { display:flex; align-items:center; gap:6px; color:var(--mut); }
+  .dot { width:11px; height:11px; border-radius:50%; background:#3a4150; }
+  .step.done .dot { background:var(--ok); }
+  .step.done { color:var(--fg); }
+  .sep { color:#3a4150; }
+  .bar { flex:1; height:8px; background:#222632; border-radius:6px; overflow:hidden; max-width:280px; }
+  .bar > i { display:block; height:100%; width:0; background:var(--acc); transition:width .3s; }
+  nav.tabs { display:flex; gap:4px; padding:10px 18px 0; border-bottom:1px solid var(--line); }
+  .tab { background:transparent; border:none; border-bottom:2px solid transparent;
+         color:var(--mut); border-radius:0; padding:8px 14px; }
+  .tab.active { color:var(--fg); border-bottom-color:var(--acc); }
+  main { padding:18px; max-width:1000px; }
+  .panel { display:none; }
+  .panel.active { display:block; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:12px;
+          padding:16px; margin-bottom:14px; }
+  .row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+  table { width:100%; border-collapse:collapse; }
+  th,td { text-align:left; padding:7px 8px; border-bottom:1px solid var(--line); }
+  th { color:var(--mut); font-weight:500; }
+  .pill { font-size:12px; padding:2px 8px; border-radius:20px; }
+  .pill.ok { background:rgba(55,200,113,.15); color:var(--ok); }
+  .pill.bad { background:rgba(255,93,93,.15); color:var(--bad); }
+  .thumbs { display:grid; grid-template-columns:repeat(auto-fill,minmax(120px,1fr)); gap:10px; }
+  .thumb { border:1px solid var(--line); border-radius:8px; overflow:hidden; background:#0c0e12; }
+  .thumb img { width:100%; height:90px; object-fit:cover; display:block; }
+  .thumb .cap { padding:4px 6px; font-size:12px; color:var(--mut); display:flex; justify-content:space-between; }
+  .miss { display:flex; align-items:center; justify-content:center; height:90px; color:var(--bad); font-size:12px; }
+  .muted { color:var(--mut); }
+  .log { background:#0a0c10; border:1px solid var(--line); border-radius:8px; padding:10px;
+         font-family:Consolas,monospace; font-size:12px; height:160px; overflow:auto; white-space:pre-wrap; color:#aeb6c4; }
+  .toast { position:fixed; right:16px; bottom:16px; background:var(--card); border:1px solid var(--line);
+           border-left:4px solid var(--acc); padding:12px 14px; border-radius:8px; max-width:360px; }
+  .toast.bad { border-left-color:var(--bad); }
+  video { width:100%; border-radius:10px; background:#000; }
+  h3 { margin:0 0 10px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>🎬 mediaforge</h1>
+  <select id="bundleSel" title="번들 선택"></select>
+  <button id="refreshBtn" title="상태 새로고침">↻</button>
+  <button id="newBtn">+ 새 번들</button>
+  <span class="grow"></span>
+  <a href="/dict" target="_blank" rel="noopener">📖 발음 사전</a>
+  <button id="oneclickBtn" class="primary big" disabled>⚡ 한 번에 만들기</button>
+</header>
+
+<div class="steps" id="steps">
+  <span class="step" data-k="script"><span class="dot"></span>대본</span><span class="sep">—</span>
+  <span class="step" data-k="images"><span class="dot"></span>이미지</span><span class="sep">—</span>
+  <span class="step" data-k="audio"><span class="dot"></span>음성</span><span class="sep">—</span>
+  <span class="step" data-k="render"><span class="dot"></span>합성</span>
+  <div class="bar" style="margin-left:14px"><i id="barFill"></i></div>
+  <span id="stageText" class="muted"></span>
+</div>
+
+<nav class="tabs">
+  <button class="tab active" data-tab="script">1 대본</button>
+  <button class="tab" data-tab="images">2 이미지</button>
+  <button class="tab" data-tab="audio">3 음성/자막</button>
+  <button class="tab" data-tab="result">4 결과</button>
+</nav>
+
+<main>
+  <section class="panel active" id="p-script">
+    <div class="card">
+      <h3>대본 JSON</h3>
+      <p class="muted">Claude/scriptforge가 만든 <code>chNN_script.json</code>을 번들의 <code>script/</code> 폴더에 넣으세요. 인식되면 아래 씬 목록이 표시됩니다.</p>
+      <div id="scriptInfo" class="muted">번들을 선택하세요.</div>
+      <table id="sceneTable" style="display:none"><thead>
+        <tr><th>씬</th><th>제목</th><th>예상(초)</th><th>이미지</th><th>음성</th></tr>
+      </thead><tbody></tbody></table>
+    </div>
+  </section>
+
+  <section class="panel" id="p-images">
+    <div class="card">
+      <h3>이미지 (Flow → Downloads → 가져오기)</h3>
+      <div class="row">
+        <a href="https://labs.google/flow" target="_blank" rel="noopener"><button>🔗 Flow 새 탭으로 열기</button></a>
+        <label class="muted">중복 시 선택:
+          <select id="preferSel"><option value="latest">최신(재생성한 것)</option><option value="earliest">처음 것</option></select>
+        </label>
+        <button id="importBtn" class="primary">📥 Downloads에서 가져오기</button>
+      </div>
+      <p class="muted" style="margin-top:6px">씬을 여러 번 뽑으면 <code>_1,_2,…</code>가 쌓입니다. 기본은 <b>가장 최근 1장</b>만 가져옵니다.</p>
+      <div class="thumbs" id="thumbs" style="margin-top:12px"></div>
+    </div>
+  </section>
+
+  <section class="panel" id="p-audio">
+    <div class="card">
+      <h3>음성/자막 (로컬 CPU TTS)</h3>
+      <div class="row">
+        <button id="synthBtn" class="primary">🔊 전체 음성/자막 생성</button>
+        <a href="/dict" target="_blank" rel="noopener"><button>📖 발음 사전 편집</button></a>
+        <span class="muted">발음이 이상하면 사전에 단어 추가 후 다시 생성하세요.</span>
+      </div>
+      <div id="audioList" style="margin-top:12px"></div>
+    </div>
+  </section>
+
+  <section class="panel" id="p-result">
+    <div class="card">
+      <h3>결과 (MP4 합성)</h3>
+      <div class="row">
+        <button id="dryBtn">🔍 검증만 (dry-run)</button>
+        <button id="renderBtn" class="primary">🎬 풀 렌더</button>
+      </div>
+      <div id="resultBox" style="margin-top:12px" class="muted">아직 합성된 영상이 없습니다.</div>
+    </div>
+  </section>
+
+  <div class="card">
+    <h3>진행 로그</h3>
+    <div class="log" id="log"></div>
+  </div>
+</main>
+
+<script>
+const api = (p, opt) => fetch(p, opt).then(async r => { const j = await r.json().catch(()=>({})); if(!r.ok) throw new Error(j.detail||r.statusText); return j; });
+const $ = s => document.querySelector(s);
+let state = { bundle:null, status:null, poll:null };
+
+function toast(msg, bad){ const t=document.createElement('div'); t.className='toast'+(bad?' bad':''); t.textContent=msg; document.body.appendChild(t); setTimeout(()=>t.remove(), 4200); }
+function setLog(lines){ const el=$('#log'); el.textContent=(lines||[]).join('\n'); el.scrollTop=el.scrollHeight; }
+function setBar(c,t){ $('#barFill').style.width = (t? Math.round(100*c/t):0)+'%'; }
+
+async function loadBundles(){
+  const {bundles} = await api('/api/mf/bundles');
+  const sel=$('#bundleSel'); sel.innerHTML='';
+  if(!bundles.length){ sel.innerHTML='<option value="">(번들 없음 — + 새 번들)</option>'; return; }
+  for(const b of bundles){ const o=document.createElement('option'); o.value=b; o.textContent=b; sel.appendChild(o); }
+  if(!state.bundle || !bundles.includes(state.bundle)) state.bundle=bundles[0];
+  sel.value=state.bundle;
+  await refresh();
+}
+
+async function refresh(){
+  if(!state.bundle){ return; }
+  const st = await api(`/api/mf/bundles/${state.bundle}/status`);
+  state.status = st;
+  $('#oneclickBtn').disabled = !st.has_script;
+  // steps
+  for(const s of document.querySelectorAll('.step')){ s.classList.toggle('done', !!(st.steps && st.steps[s.dataset.k])); }
+  renderScript(st); renderImages(st); renderAudio(st); renderResult(st);
+}
+
+function renderScript(st){
+  const info=$('#scriptInfo'), tbl=$('#sceneTable'), tb=tbl.querySelector('tbody');
+  if(!st.has_script){ info.textContent='대본 JSON이 없습니다. script/ 폴더에 chNN_script.json을 넣으세요.'; tbl.style.display='none'; return; }
+  info.innerHTML=`✅ <b>${st.title||'(제목 없음)'}</b> · 챕터 ${st.chapter} · 씬 ${st.scene_count}개`;
+  tb.innerHTML=''; tbl.style.display='table';
+  for(const s of st.scenes){
+    const tr=document.createElement('tr');
+    tr.innerHTML=`<td>${s.scene}</td><td>${s.title||''}</td><td>${s.narration_seconds??''}</td>
+      <td>${s.has_image?'<span class="pill ok">있음</span>':'<span class="pill bad">없음</span>'}</td>
+      <td>${s.has_audio?'<span class="pill ok">있음</span>':'<span class="pill bad">없음</span>'}</td>`;
+    tb.appendChild(tr);
+  }
+}
+
+function renderImages(st){
+  const el=$('#thumbs'); if(!st.scenes){ el.innerHTML=''; return; }
+  el.innerHTML='';
+  for(const s of st.scenes){
+    const d=document.createElement('div'); d.className='thumb';
+    if(s.has_image && s.image_file){
+      const url=`/api/mf/file/${state.bundle}/images/${encodeURIComponent(s.image_file)}`;
+      d.innerHTML=`<img src="${url}" alt="씬${s.scene}"><div class="cap"><span>씬${s.scene}</span><span class="pill ok">OK</span></div>`;
+    } else {
+      d.innerHTML=`<div class="miss">씬${s.scene} 없음</div>`;
+    }
+    el.appendChild(d);
+  }
+}
+
+function renderAudio(st){
+  const el=$('#audioList'); if(!st.scenes){ el.innerHTML=''; return; }
+  el.innerHTML = st.scenes.map(s=>{
+     const audio = (s.has_audio && s.audio_file)
+       ? `<audio src="/api/mf/file/${state.bundle}/audio/${encodeURIComponent(s.audio_file)}" controls style="height:30px"></audio>`
+       : '<span class="pill bad">미생성</span>';
+     return `<div class="row" style="justify-content:space-between;border-bottom:1px solid var(--line);padding:6px 0">
+       <span>씬 ${s.scene} · ${s.title||''}</span>${audio}</div>`;
+  }).join('');
+}
+
+function renderResult(st){
+  const el=$('#resultBox');
+  if(st.final_mp4){
+    const name = st.final_mp4.split(/[\\/]/).pop();
+    const url=`/api/mf/file/${state.bundle}/draft/${name}`;
+    el.innerHTML=`<video src="${url}" controls></video>
+      <div class="row" style="margin-top:8px"><a href="${url}" download><button class="primary">⬇ 다운로드 (${name})</button></a></div>`;
+  } else { el.innerHTML='<span class="muted">아직 합성된 영상이 없습니다. [🎬 풀 렌더] 또는 [⚡ 한 번에 만들기].</span>'; }
+}
+
+async function pollJob(id, done){
+  clearInterval(state.poll);
+  state.poll=setInterval(async()=>{
+    let j; try{ j=await api(`/api/mf/jobs/${id}`); }catch(e){ return; }
+    $('#stageText').textContent = j.stage||'';
+    setBar(j.completed, j.total); setLog(j.log);
+    if(j.status==='done' || j.status==='error'){
+      clearInterval(state.poll);
+      if(j.status==='error'){ toast('실패: '+(j.error||''), true); }
+      else { toast('완료'); }
+      await refresh(); if(done) done(j);
+    }
+  }, 800);
+}
+
+// --- 버튼 핸들러 ---
+$('#bundleSel').onchange = e => { state.bundle=e.target.value; refresh(); };
+$('#refreshBtn').onclick = refresh;
+$('#newBtn').onclick = async()=>{ const n=prompt('새 번들 이름 (예: ch90)'); if(!n) return;
+  const r=await api('/api/mf/bundles',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:n})});
+  state.bundle=r.bundle; toast('생성: '+r.bundle+' (script/ 에 대본 JSON을 넣으세요)'); await loadBundles(); };
+$('#importBtn').onclick = async()=>{ try{
+  const r=await api(`/api/mf/bundles/${state.bundle}/import_images`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({prefer:$('#preferSel').value})});
+  toast(`이미지 ${r.imported.length}개 씬 가져옴`); state.status=r.status; await refresh();
+}catch(e){ toast(e.message,true); } };
+$('#synthBtn').onclick = async()=>{ const r=await api(`/api/mf/bundles/${state.bundle}/synth`,{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'}); pollJob(r.job_id); };
+$('#renderBtn').onclick = async()=>{ const r=await api(`/api/mf/bundles/${state.bundle}/render`,{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'}); pollJob(r.job_id); };
+$('#dryBtn').onclick = async()=>{ const r=await api(`/api/mf/bundles/${state.bundle}/render`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({dry_run:true})}); pollJob(r.job_id); };
+$('#oneclickBtn').onclick = async()=>{ const r=await api(`/api/mf/bundles/${state.bundle}/oneclick`,{method:'POST'}); pollJob(r.job_id); };
+
+document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{
+  document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));
+  document.querySelectorAll('.panel').forEach(x=>x.classList.remove('active'));
+  t.classList.add('active'); $('#p-'+t.dataset.tab).classList.add('active');
+});
+
+loadBundles().catch(e=>toast(e.message,true));
+</script>
+</body>
+</html>

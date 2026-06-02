@@ -1,0 +1,123 @@
+"""번들(_assets/chNN_bundle) 탐색·생성·상태 점검 헬퍼.
+
+번들 규약(mp4maker 기준):
+    chNN_bundle/
+      script/     chNN_script.json
+      images/     chNN_XX_*.{png,jpg,jpeg,webp}
+      audio/      chNN_XX_narration.{wav,mp3,m4a,flac}
+      subtitles/  chNN_XX_narration.srt  (+ chNN.srt)
+      draft/      chNN_final.mp4
+"""
+from __future__ import annotations
+
+import json
+import re
+from pathlib import Path
+
+MEDIAFORGE_ROOT = Path(__file__).resolve().parents[1]
+ASSETS_DIR = MEDIAFORGE_ROOT / "_assets"
+
+IMG_EXTS = (".png", ".jpg", ".jpeg", ".webp")
+AUD_EXTS = (".wav", ".mp3", ".m4a", ".flac")
+SUBDIRS = ("script", "images", "audio", "subtitles", "draft")
+
+
+def _chap(bundle_dir: Path) -> str | None:
+    m = re.search(r"(\d{1,3})", bundle_dir.name.replace("_bundle", ""))
+    return f"{int(m.group(1)):02d}" if m else None
+
+
+def list_bundles() -> list[str]:
+    if not ASSETS_DIR.is_dir():
+        return []
+    return sorted(p.name for p in ASSETS_DIR.iterdir() if p.is_dir() and p.name.endswith("_bundle"))
+
+
+def bundle_path(name: str) -> Path:
+    if "/" in name or "\\" in name or name.startswith("."):
+        raise ValueError(f"잘못된 번들 이름: {name}")
+    return ASSETS_DIR / name
+
+
+def create_bundle(name: str) -> Path:
+    """번들 폴더 + 하위 폴더 골격 생성. 이름은 chNN_bundle 형태 권장."""
+    if not name.endswith("_bundle"):
+        name = f"{name}_bundle"
+    root = bundle_path(name)
+    for sub in SUBDIRS:
+        (root / sub).mkdir(parents=True, exist_ok=True)
+    return root
+
+
+def find_script(bundle_dir: Path) -> Path | None:
+    hits = sorted((bundle_dir / "script").glob("*_script.json"))
+    return hits[0] if hits else None
+
+
+def _find_prefix_file(folder: Path, chap: str, scene: int, exts: tuple[str, ...],
+                      suffix: str = "") -> Path | None:
+    """이 씬에 해당하는 파일 하나를 찾아 경로를 반환 (없으면 None)."""
+    if not folder.is_dir():
+        return None
+    for pref in (f"ch{chap}_{scene:02d}", f"{int(chap)}_{scene:02d}"):
+        for ext in exts:
+            if suffix:
+                exact = folder / f"{pref}{suffix}{ext}"
+                if exact.exists():
+                    return exact
+            hits = sorted(folder.glob(f"{pref}*{ext}"))
+            if hits:
+                return hits[0]
+    return None
+
+
+def bundle_status(name: str) -> dict:
+    """번들 한 개의 단계별 상태를 요약한다 (UI 진행 표시줄·검증용)."""
+    root = bundle_path(name)
+    chap = _chap(root)
+    script_path = find_script(root) if root.is_dir() else None
+
+    scenes_out: list[dict] = []
+    title = ""
+    if script_path and script_path.exists():
+        try:
+            data = json.loads(script_path.read_text(encoding="utf-8"))
+        except Exception as exc:
+            return {"bundle": name, "ok": False, "error": f"대본 JSON 파싱 실패: {exc}"}
+        title = data.get("title") or ""
+        for pos, sc in enumerate(data.get("scenes") or []):
+            idx = int(sc.get("scene") or sc.get("scene_number") or pos + 1)
+            img = _find_prefix_file(root / "images", chap, idx, IMG_EXTS)
+            aud = _find_prefix_file(root / "audio", chap, idx, AUD_EXTS, "_narration")
+            scenes_out.append({
+                "scene": idx,
+                "title": sc.get("title") or "",
+                "narration_seconds": sc.get("narration_seconds"),
+                "has_image": img is not None,
+                "has_audio": aud is not None,
+                "image_file": img.name if img else None,
+                "audio_file": aud.name if aud else None,
+            })
+
+    draft_mp4 = root / "draft" / f"ch{chap}_final.mp4" if chap else None
+    n = len(scenes_out)
+    img_done = sum(1 for s in scenes_out if s["has_image"])
+    aud_done = sum(1 for s in scenes_out if s["has_audio"])
+    return {
+        "bundle": name,
+        "ok": True,
+        "chapter": chap,
+        "title": title,
+        "has_script": bool(script_path),
+        "scene_count": n,
+        "scenes": scenes_out,
+        "missing_images": [s["scene"] for s in scenes_out if not s["has_image"]],
+        "missing_audio": [s["scene"] for s in scenes_out if not s["has_audio"]],
+        "steps": {
+            "script": bool(script_path),
+            "images": n > 0 and img_done == n,
+            "audio": n > 0 and aud_done == n,
+            "render": bool(draft_mp4 and draft_mp4.exists()),
+        },
+        "final_mp4": str(draft_mp4) if (draft_mp4 and draft_mp4.exists()) else None,
+    }

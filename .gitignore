@@ -1,0 +1,19 @@
+# 로컬 전용 요청/설계 메모 (GitHub에 안 올림)
+_context/
+
+# 작업 산출물 (번들: 대본/이미지/음성/영상)
+_assets/
+
+# TTS 모델 가중치 (별도 다운로드, ~250MB)
+assets/onnx/
+assets/voice_styles/
+
+# 파이썬
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# OS
+.DS_Store
+Thumbs.db
