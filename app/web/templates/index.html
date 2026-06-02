@@ -280,7 +280,8 @@ async function renderAudio(st){
       <div class="row" style="margin-top:8px">
         <button class="pron">한국어 발음 전환</button>
         <span class="muted">보이스</span><select class="voice">${vopts}</select>
-        <button class="regen primary">🔁 이 씬 음성+자막 재생성</button>
+        <button class="regen primary" title="음성만 다시 만들고, 편집한 자막 줄은 유지한 채 시간만 새 음성 길이에 맞춰 보정">🔁 음성 재생성 (자막 유지)</button>
+        <button class="resetsub" title="자막을 오른쪽 '자막' 칸 원문으로 처음부터 다시 만듭니다">자막 새로</button>
       </div>
       ${audio}
       <div class="cuehead"><b>자막 타이밍</b> <small>(들으면서 조정)</small><span class="grow"></span>
@@ -306,16 +307,30 @@ async function renderAudio(st){
       try{ const r=await api(`/api/mf/bundles/${state.bundle}/to_pronunciation`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:narr.value})});
         narr.value=r.text; toast('발음 전환 적용 (TTS 입력)'); }catch(e){ toast(e.message,true); }
     };
+    const currentCues=()=>[...rowsEl.querySelectorAll('.cuerow')].map(r=>({
+        start:parseTime(r.querySelector('.cstart').value), end:parseTime(r.querySelector('.cend').value),
+        text:r.querySelector('.ctext').value}));
+    async function doSynth(resetSubtitle){
+      // 편집한 자막 줄을 잃지 않도록, 재생성 전에 현재 화면의 자막을 먼저 저장한다.
+      if(!resetSubtitle){ const cues=currentCues().filter(c=>c.text.trim());
+        if(cues.length){ try{ await api(`/api/mf/bundles/${state.bundle}/scene_srt`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({scene,cues})}); }catch(_){}} }
+      const r=await api(`/api/mf/bundles/${state.bundle}/scene_synth`,{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({scene, text:card.querySelector('.narr').value, srt_text:card.querySelector('.srt').value,
+          voice:card.querySelector('.voice').value||null, reset_subtitle:!!resetSubtitle})});
+      card.dataset.dur=r.duration; rowsEl.classList.remove('muted'); rowsEl.innerHTML=r.cues.map(cueRowHtml).join('');
+      let a=card.querySelector('.aud'); const src=`/api/mf/file/${state.bundle}/audio/${encodeURIComponent(r.audio_file)}?t=${Date.now()}`;
+      if(a) a.src=src; else { a=document.createElement('audio'); a.className='aud'; a.controls=true; a.src=src; card.querySelector('.cuehead').before(a); }
+      card.querySelector('.dur').textContent='· 음성 '+r.duration.toFixed(1)+'s';
+    }
     card.querySelector('.regen').onclick=async(e)=>{
-      const btn=e.target; btn.disabled=true; btn.textContent='생성 중…';
-      try{ const r=await api(`/api/mf/bundles/${state.bundle}/scene_synth`,{method:'POST',headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({scene, text:card.querySelector('.narr').value, srt_text:card.querySelector('.srt').value, voice:card.querySelector('.voice').value||null})});
-        card.dataset.dur=r.duration; rowsEl.classList.remove('muted'); rowsEl.innerHTML=r.cues.map(cueRowHtml).join('');
-        let a=card.querySelector('.aud'); const src=`/api/mf/file/${state.bundle}/audio/${encodeURIComponent(r.audio_file)}?t=${Date.now()}`;
-        if(a) a.src=src; else { a=document.createElement('audio'); a.className='aud'; a.controls=true; a.src=src; card.querySelector('.cuehead').before(a); }
-        card.querySelector('.dur').textContent='· 음성 '+r.duration.toFixed(1)+'s';
-        toast(`씬 ${scene} 재생성 완료`);
-      }catch(err){ toast(err.message,true); } finally{ btn.disabled=false; btn.textContent='🔁 이 씬 음성+자막 재생성'; }
+      const btn=e.target; btn.disabled=true; const old=btn.textContent; btn.textContent='생성 중…';
+      try{ await doSynth(false); toast(`씬 ${scene} 음성 재생성 (자막 유지)`); }
+      catch(err){ toast(err.message,true); } finally{ btn.disabled=false; btn.textContent=old; }
+    };
+    card.querySelector('.resetsub').onclick=async(e)=>{
+      const btn=e.target; btn.disabled=true; const old=btn.textContent; btn.textContent='생성 중…';
+      try{ await doSynth(true); toast(`씬 ${scene} 음성+자막 새로 생성`); }
+      catch(err){ toast(err.message,true); } finally{ btn.disabled=false; btn.textContent=old; }
     };
     card.querySelector('.autofill').onclick=()=>{
       const total=parseFloat(card.dataset.dur)||0;

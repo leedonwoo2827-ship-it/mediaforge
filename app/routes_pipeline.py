@@ -229,6 +229,7 @@ class SceneSynthReq(BaseModel):
     srt_text: str | None = None
     voice: str | None = None
     speed: float | None = None
+    reset_subtitle: bool = False   # True면 자막을 srt_text로 새로, False면 편집본 유지+재타이밍
 
 
 class SceneSrtReq(BaseModel):
@@ -243,6 +244,7 @@ async def scene_synth(name: str, req: SceneSynthReq) -> dict:
         return await synthesize_scene_text(
             bundles.bundle_path(name), req.scene, req.text,
             srt_text=req.srt_text, voice=req.voice, speed=req.speed,
+            reset_subtitle=req.reset_subtitle,
         )
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc

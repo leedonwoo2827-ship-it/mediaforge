@@ -182,12 +182,16 @@ async def synth_scene_text(
     voice: str | None = None,
     speed: float | None = None,
     total_step: int | None = None,
+    reset_subtitle: bool = False,
 ) -> dict:
-    """한 씬만, 주어진 텍스트로 음성+자막을 (번들에 직접) 다시 만든다.
+    """한 씬만, 주어진 텍스트로 음성을 다시 만든다 (번들에 직접 기록).
 
     - 음성(TTS)에는 발음 사전이 자동 적용된다(엔진 내부).
-    - 자막(SRT)에는 원문(srt_text 없으면 text)을 쓰고, **실측 음성 길이**에 맞춰
-      글자수 비례로 타이밍을 부여한다 → 발음변환/괄호제거로 인한 싱크 어긋남 자동 보정.
+    - 자막 타이밍은 **실측 음성 길이**에 맞춰 자동 재계산 → 발음변환/괄호제거로 인한
+      싱크 어긋남을 보정한다.
+    - reset_subtitle=False(기본): 이미 편집해 둔 per-scene 자막의 **줄 나눔(텍스트)을 유지**하고
+      시간만 새 음성 길이에 맞춰 재배분 → 사용자의 자막 편집이 보존된다.
+    - reset_subtitle=True: 자막을 srt_text(없으면 text)로 처음부터 새로 만든다.
     """
     bundle = Path(bundle_dir).resolve()
     chap = _bundle_chapter_id(bundle)
@@ -206,11 +210,20 @@ async def synth_scene_text(
     write_wav(wav_path, wav, engine.sample_rate)
 
     dur = float(len(wav)) / float(engine.sample_rate)
-    body = (srt_text or text).strip()
-    cues = auto_time_cues(split_into_cues(body), dur)
     sub_dir = bundle / "subtitles"
     sub_dir.mkdir(parents=True, exist_ok=True)
-    (sub_dir / srt_filename(chap, int(scene))).write_text(make_multi_srt(cues), encoding="utf-8")
+    srt_p = sub_dir / srt_filename(chap, int(scene))
+
+    # 기존 편집 자막의 줄 나눔(텍스트) 유지 — 시간만 새 길이에 재배분
+    existing_texts: list[str] = []
+    if not reset_subtitle and srt_p.exists():
+        existing_texts = [c.text for c in parse_srt_cues(srt_p.read_text(encoding="utf-8")) if c.text.strip()]
+    if existing_texts:
+        cues = auto_time_cues(existing_texts, dur)
+    else:
+        body = (srt_text or text).strip()
+        cues = auto_time_cues(split_into_cues(body), dur)
+    srt_p.write_text(make_multi_srt(cues), encoding="utf-8")
     rebuild_chapter_srt(bundle)
 
     return {
