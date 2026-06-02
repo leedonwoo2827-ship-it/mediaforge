@@ -10,9 +10,8 @@ _assets/
 **/subtitles/
 **/draft/
 
-# TTS 모델 가중치 (별도 다운로드, ~250MB)
-assets/onnx/
-assets/voice_styles/
+# TTS 모델 (HuggingFace에서 setup으로 다운로드, ~380MB, 자체 .git 포함) — 전체 제외
+assets/
 
 # 파이썬
 .venv/
