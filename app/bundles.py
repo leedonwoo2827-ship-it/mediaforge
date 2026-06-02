@@ -89,14 +89,17 @@ def bundle_status(name: str) -> dict:
             idx = int(sc.get("scene") or sc.get("scene_number") or pos + 1)
             img = _find_prefix_file(root / "images", chap, idx, IMG_EXTS)
             aud = _find_prefix_file(root / "audio", chap, idx, AUD_EXTS, "_narration")
+            sub = _find_prefix_file(root / "subtitles", chap, idx, (".srt",), "_narration")
             scenes_out.append({
                 "scene": idx,
                 "title": sc.get("title") or "",
                 "narration_seconds": sc.get("narration_seconds"),
                 "has_image": img is not None,
                 "has_audio": aud is not None,
+                "has_subtitle": sub is not None,
                 "image_file": img.name if img else None,
                 "audio_file": aud.name if aud else None,
+                "subtitle_file": sub.name if sub else None,
             })
 
     draft_mp4 = root / "draft" / f"ch{chap}_final.mp4" if chap else None

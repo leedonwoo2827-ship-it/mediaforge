@@ -66,6 +66,9 @@
   .pathbox code { color:#cfe0ff; background:#161a22; padding:2px 6px; border-radius:5px;
                   font-family:Consolas,monospace; word-break:break-all; }
   .pathbox button { padding:3px 9px; font-size:12px; margin-left:6px; }
+  pre.srt { background:#0a0c10; border:1px solid var(--line); border-radius:6px; padding:8px 10px;
+            margin:6px 0 0; font-family:Consolas,monospace; font-size:12px; color:#aeb6c4;
+            white-space:pre-wrap; max-height:160px; overflow:auto; }
 </style>
 </head>
 <body>
@@ -224,10 +227,21 @@ function renderAudio(st){
   el.innerHTML = st.scenes.map(s=>{
      const audio = (s.has_audio && s.audio_file)
        ? `<audio src="/api/mf/file/${state.bundle}/audio/${encodeURIComponent(s.audio_file)}" controls style="height:30px"></audio>`
-       : '<span class="pill bad">미생성</span>';
-     return `<div class="row" style="justify-content:space-between;border-bottom:1px solid var(--line);padding:6px 0">
-       <span>씬 ${s.scene} · ${s.title||''}</span>${audio}</div>`;
+       : '<span class="pill bad">음성 미생성</span>';
+     const srt = s.has_subtitle
+       ? `<pre class="srt" id="srt-${s.scene}">자막 불러오는 중…</pre>`
+       : `<div class="muted" style="margin:4px 0 2px">자막 미생성</div>`;
+     return `<div style="border-bottom:1px solid var(--line);padding:8px 0">
+       <div class="row" style="justify-content:space-between">
+         <span>씬 ${s.scene} · ${s.title||''}</span>${audio}</div>${srt}</div>`;
   }).join('');
+  // 자막 텍스트 지연 로드
+  for(const s of st.scenes){
+    if(!s.has_subtitle || !s.subtitle_file) continue;
+    fetch(`/api/mf/file/${state.bundle}/subtitles/${encodeURIComponent(s.subtitle_file)}`)
+      .then(r=>r.text()).then(t=>{ const p=document.getElementById('srt-'+s.scene); if(p) p.textContent=t.trim(); })
+      .catch(()=>{});
+  }
 }
 
 function renderResult(st){
