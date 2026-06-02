@@ -8,6 +8,7 @@ from __future__ import annotations
 import asyncio
 import json
 import mimetypes
+import shutil
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
@@ -291,6 +292,25 @@ async def serve_file(name: str, kind: str, filename: str) -> FileResponse:
         raise HTTPException(404, "file not found")
     media, _ = mimetypes.guess_type(str(p))
     return FileResponse(str(p), media_type=media or "application/octet-stream", filename=filename)
+
+
+@router.post("/bundles/{name}/clear_draft")
+async def clear_draft(name: str) -> dict:
+    """기존 풀렌더 결과(draft/ 안의 mp4·srt·mlt·report·_work)를 비운다."""
+    draft = bundles.bundle_path(name) / "draft"
+    removed: list[str] = []
+    if draft.is_dir():
+        for p in sorted(draft.iterdir()):
+            try:
+                if p.is_dir():
+                    shutil.rmtree(p, ignore_errors=True)
+                    removed.append(p.name + "/")
+                else:
+                    p.unlink()
+                    removed.append(p.name)
+            except OSError:
+                pass
+    return {"removed": removed, "status": bundles.bundle_status(name)}
 
 
 @router.get("/probe")

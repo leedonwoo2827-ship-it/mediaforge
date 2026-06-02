@@ -158,6 +158,7 @@
       <div class="row">
         <button id="dryBtn">🔍 검증만 (dry-run)</button>
         <button id="renderBtn" class="primary">🎬 풀 렌더</button>
+        <button id="clearBtn">🗑 기존 결과 삭제</button>
       </div>
       <div id="resultBox" style="margin-top:12px" class="muted">아직 합성된 영상이 없습니다.</div>
     </div>
@@ -281,7 +282,6 @@ async function renderAudio(st){
         <button class="pron">한국어 발음 전환</button>
         <span class="muted">보이스</span><select class="voice">${vopts}</select>
         <button class="regen primary" title="음성만 다시 만들고, 편집한 자막 줄은 유지한 채 시간만 새 음성 길이에 맞춰 보정">🔁 음성 재생성</button>
-        <button class="resetsub" title="자막을 오른쪽 '자막' 칸 원문으로 처음부터 다시 만듭니다">자막 재생성</button>
       </div>
       ${audio}
       <div class="cuehead"><b>자막 타이밍</b> <small>(들으면서 조정)</small><span class="grow"></span>
@@ -327,11 +327,6 @@ async function renderAudio(st){
       try{ await doSynth(false); toast(`씬 ${scene} 음성 재생성 (자막 유지)`); }
       catch(err){ toast(err.message,true); } finally{ btn.disabled=false; btn.textContent=old; }
     };
-    card.querySelector('.resetsub').onclick=async(e)=>{
-      const btn=e.target; btn.disabled=true; const old=btn.textContent; btn.textContent='생성 중…';
-      try{ await doSynth(true); toast(`씬 ${scene} 음성+자막 새로 생성`); }
-      catch(err){ toast(err.message,true); } finally{ btn.disabled=false; btn.textContent=old; }
-    };
     card.querySelector('.autofill').onclick=()=>{
       const total=parseFloat(card.dataset.dur)||0;
       if(!total){ toast('먼저 음성을 생성하세요 (길이 필요)',true); return; }
@@ -354,8 +349,10 @@ function renderResult(st){
   const el=$('#resultBox');
   if(st.final_mp4){
     const name = st.final_mp4.split(/[\\/]/).pop();
-    const url=`/api/mf/file/${state.bundle}/draft/${name}`;
-    el.innerHTML=`<video src="${url}" controls></video>
+    const url=`/api/mf/file/${state.bundle}/draft/${encodeURIComponent(name)}?t=${Date.now()}`;
+    const stale = st.render_stale
+      ? `<div style="background:rgba(245,185,66,.15);border:1px solid var(--warn);color:var(--warn);border-radius:8px;padding:8px 10px;margin-bottom:8px">⚠ 음성·자막·이미지가 바뀌었습니다. 아래 영상은 <b>옛 버전</b>입니다 — [🎬 풀 렌더]로 다시 만드세요 (또는 [🗑 기존 결과 삭제]).</div>` : '';
+    el.innerHTML=`${stale}<video src="${url}" controls></video>
       <div class="row" style="margin-top:8px"><a href="${url}" download><button class="primary">⬇ 다운로드 (${name})</button></a></div>`;
   } else { el.innerHTML='<span class="muted">아직 합성된 영상이 없습니다. [🎬 풀 렌더] 또는 [⚡ 한 번에 만들기].</span>'; }
 }
@@ -388,6 +385,8 @@ $('#importBtn').onclick = async()=>{ try{
 $('#synthBtn').onclick = async()=>{ const r=await api(`/api/mf/bundles/${state.bundle}/synth`,{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'}); pollJob(r.job_id); };
 $('#renderBtn').onclick = async()=>{ const r=await api(`/api/mf/bundles/${state.bundle}/render`,{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'}); pollJob(r.job_id); };
 $('#dryBtn').onclick = async()=>{ const r=await api(`/api/mf/bundles/${state.bundle}/render`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({dry_run:true})}); pollJob(r.job_id); };
+$('#clearBtn').onclick = async()=>{ if(!confirm('기존 풀렌더 결과(영상·자막·프로젝트)를 삭제할까요?')) return;
+  try{ const r=await api(`/api/mf/bundles/${state.bundle}/clear_draft`,{method:'POST'}); toast(`삭제됨 (${r.removed.length}개)`); state.status=r.status; await refresh(); }catch(e){ toast(e.message,true); } };
 $('#oneclickBtn').onclick = async()=>{ const r=await api(`/api/mf/bundles/${state.bundle}/oneclick`,{method:'POST'}); pollJob(r.job_id); };
 
 document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{

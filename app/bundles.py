@@ -54,6 +54,21 @@ def find_script(bundle_dir: Path) -> Path | None:
     return hits[0] if hits else None
 
 
+def _newest_mtime(dirs: list[Path]) -> float:
+    """주어진 폴더들 안 파일의 가장 최근 수정시각. 없으면 0."""
+    newest = 0.0
+    for d in dirs:
+        if not d.is_dir():
+            continue
+        for p in d.iterdir():
+            if p.is_file():
+                try:
+                    newest = max(newest, p.stat().st_mtime)
+                except OSError:
+                    pass
+    return newest
+
+
 def _audio_duration(path: Path | None) -> float | None:
     """오디오 길이(초). 실패하면 None. (cue 자동 채우기용)"""
     if path is None or not path.exists():
@@ -118,6 +133,16 @@ def bundle_status(name: str) -> dict:
             })
 
     draft_mp4 = root / "draft" / f"ch{chap}_final.mp4" if chap else None
+    # 렌더 결과가 입력(음성/자막/이미지/대본)보다 오래됐으면 stale → 다시 렌더 필요
+    render_stale = False
+    if draft_mp4 and draft_mp4.exists():
+        try:
+            mp4_mtime = draft_mp4.stat().st_mtime
+            newest_input = _newest_mtime([root / "audio", root / "subtitles",
+                                          root / "images", root / "script"])
+            render_stale = newest_input > mp4_mtime + 0.5
+        except OSError:
+            render_stale = False
     n = len(scenes_out)
     img_done = sum(1 for s in scenes_out if s["has_image"])
     aud_done = sum(1 for s in scenes_out if s["has_audio"])
@@ -138,7 +163,8 @@ def bundle_status(name: str) -> dict:
             "script": bool(script_path),
             "images": n > 0 and img_done == n,
             "audio": n > 0 and aud_done == n,
-            "render": bool(draft_mp4 and draft_mp4.exists()),
+            "render": bool(draft_mp4 and draft_mp4.exists()) and not render_stale,
         },
         "final_mp4": str(draft_mp4) if (draft_mp4 and draft_mp4.exists()) else None,
+        "render_stale": render_stale,
     }
