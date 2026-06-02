@@ -82,6 +82,13 @@
   .cuerow { display:grid; grid-template-columns:92px 92px 1fr 28px; gap:6px; margin-bottom:5px; align-items:center; }
   .cuerow input { background:#161a22; color:var(--fg); border:1px solid var(--line); border-radius:6px; padding:5px 7px; font:inherit; }
   .cuerow .del { padding:3px 8px; }
+  .cuerow.active input { border-color:var(--acc); background:#1b2740; }
+  .cuepv { background:#000; border:1px solid var(--line); border-radius:8px; min-height:64px;
+           display:flex; align-items:center; justify-content:center; text-align:center;
+           padding:12px 16px; margin:8px 0; }
+  .cuepv-text { color:#fff; font-size:18px; font-weight:600; line-height:1.4;
+                text-shadow:0 1px 3px #000; }
+  .cuepv-text:empty::before { content:'▶ 재생하면 현재 자막이 여기 표시됩니다'; color:#5a6273; font-weight:400; font-size:13px; }
   @media(max-width:760px){ .twocol{grid-template-columns:1fr} }
 </style>
 </head>
@@ -259,6 +266,19 @@ function autofillCues(cues, total){ // 글자수 비례 분배 (backend auto_tim
 let VOICES=null;
 async function loadVoices(){ if(VOICES) return VOICES; try{ VOICES=(await api('/api/voices')).voices.map(v=>v.code); }catch(e){ VOICES=[]; } return VOICES; }
 
+// 재생 중 현재 자막을 검은 박스에 표시 + 해당 줄 하이라이트 (현재 cue 행의 시간 기준)
+function syncPreview(card){
+  const a=card.querySelector('.aud'), pv=card.querySelector('.cuepv-text'), rowsEl=card.querySelector('.cuerows');
+  if(!a || !pv || !rowsEl) return;
+  const upd=()=>{ const t=a.currentTime; let found='';
+    rowsEl.querySelectorAll('.cuerow').forEach(r=>{
+      const s=parseTime(r.querySelector('.cstart').value), e=parseTime(r.querySelector('.cend').value);
+      const on=(t>=s && t<e); r.classList.toggle('active', on); if(on) found=r.querySelector('.ctext').value; });
+    pv.textContent=found; };
+  a.ontimeupdate=upd; a.onseeked=upd; a.onplay=upd;
+  a.onpause=()=>{}; a.onended=()=>{ rowsEl.querySelectorAll('.cuerow.active').forEach(r=>r.classList.remove('active')); pv.textContent=''; };
+}
+
 function cueRowHtml(c){ return `<div class="cuerow">
   <input class="cstart" value="${fmt(c.start)}"><input class="cend" value="${fmt(c.end)}">
   <input class="ctext" value="${(c.text||'').replace(/"/g,'&quot;')}">
@@ -284,6 +304,7 @@ async function renderAudio(st){
         <button class="regen primary" title="음성만 다시 만들고, 편집한 자막 줄은 유지한 채 시간만 새 음성 길이에 맞춰 보정">🔁 음성 재생성</button>
       </div>
       ${audio}
+      <div class="cuepv"><span class="cuepv-text"></span></div>
       <div class="cuehead"><b>자막 타이밍</b> <small>(들으면서 조정)</small><span class="grow"></span>
         <button class="autofill">시간 자동 채우기</button><button class="addrow">+ 행</button>
         <button class="savesrt primary">자막 저장</button></div>
@@ -301,6 +322,8 @@ async function renderAudio(st){
       fetch(`/api/mf/file/${state.bundle}/subtitles/${encodeURIComponent(s.subtitle_file)}`).then(r=>r.text())
         .then(t=>{ const cues=parseSrt(t); rowsEl.classList.remove('muted'); rowsEl.innerHTML=cues.map(cueRowHtml).join('')||'<span class="muted">자막 없음</span>'; });
     } else { rowsEl.classList.remove('muted'); rowsEl.innerHTML='<span class="muted">아직 자막 없음 — 재생성하면 만들어집니다</span>'; }
+
+    syncPreview(card);
 
     card.querySelector('.pron').onclick=async()=>{
       const narr=card.querySelector('.narr');
@@ -321,6 +344,7 @@ async function renderAudio(st){
       let a=card.querySelector('.aud'); const src=`/api/mf/file/${state.bundle}/audio/${encodeURIComponent(r.audio_file)}?t=${Date.now()}`;
       if(a) a.src=src; else { a=document.createElement('audio'); a.className='aud'; a.controls=true; a.src=src; card.querySelector('.cuehead').before(a); }
       card.querySelector('.dur').textContent='· 음성 '+r.duration.toFixed(1)+'s';
+      syncPreview(card);
     }
     card.querySelector('.regen').onclick=async(e)=>{
       const btn=e.target; btn.disabled=true; const old=btn.textContent; btn.textContent='생성 중…';
