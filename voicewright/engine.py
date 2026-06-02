@@ -163,7 +163,9 @@ class Engine:
         s = settings_module.load()
         ts = total_step if total_step is not None else s.default_total_step
         sp = speed if speed is not None else s.default_speed
-        text = self._get_pmap().apply(text)
+        # 합성 직전 항상 전체 발음 변환: 발음사전 + 영문 약어 음역 + 연도(1989년→천구백…)
+        # + 숫자·단위. (자막 SRT에는 적용 안 됨 — 원문 유지) 모든 합성 경로가 이걸 거친다.
+        text = self._get_pmap().apply(text, spell_unknown_acronyms=True, convert_years=True)
         style = self._style_for(voice_code)
 
         pieces = _split_for_tts(text)

@@ -3,6 +3,11 @@
 mediaforge는 `voicewright/` 와 `mp4maker/` 를 GitHub 원본에서 복사(vendor)해 들였다.
 원본을 다시 받아 덮어쓰면 아래 수정이 사라지므로, **재동기화 시 이 문서를 보고 다시 적용**한다.
 
+## voicewright/engine.py — 합성 시 발음 변환 항상 풀옵션
+- `synth()` 의 `pmap.apply(text)` → `apply(text, spell_unknown_acronyms=True, convert_years=True)`.
+- 모든 합성 경로(배치/씬/⚡한번에)가 **연도(1989년→천구백팔십구년)·영문약어·숫자단위**까지
+  자동 변환. 자막(SRT)에는 적용 안 됨(원문 유지).
+
 ## voicewright/batch.py — flat 번들 출력
 - `run_batch(..., flat_layout: bool = False)` 추가.
 - `flat_layout=True` 면 `output_root/audio`·`output_root/subtitles` 에 직접 쓴다

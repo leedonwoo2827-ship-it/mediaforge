@@ -353,7 +353,12 @@ function renderResult(st){
     const stale = st.render_stale
       ? `<div style="background:rgba(245,185,66,.15);border:1px solid var(--warn);color:var(--warn);border-radius:8px;padding:8px 10px;margin-bottom:8px">⚠ 음성·자막·이미지가 바뀌었습니다. 아래 영상은 <b>옛 버전</b>입니다 — [🎬 풀 렌더]로 다시 만드세요 (또는 [🗑 기존 결과 삭제]).</div>` : '';
     el.innerHTML=`${stale}<video src="${url}" controls></video>
-      <div class="row" style="margin-top:8px"><a href="${url}" download><button class="primary">⬇ 다운로드 (${name})</button></a></div>`;
+      <div class="row" style="margin-top:8px">
+        <a href="${url}" download><button class="primary">⬇ 다운로드 (${name})</button></a>
+        <button id="openDraftBtn">📂 결과 폴더 열기</button>
+      </div>`;
+    const ob=$('#openDraftBtn');
+    if(ob) ob.onclick=async()=>{ try{ await api(`/api/mf/bundles/${state.bundle}/open_draft`,{method:'POST'}); toast('결과 폴더를 열었습니다'); }catch(e){ toast(e.message,true); } };
   } else { el.innerHTML='<span class="muted">아직 합성된 영상이 없습니다. [🎬 풀 렌더] 또는 [⚡ 한 번에 만들기].</span>'; }
 }
 

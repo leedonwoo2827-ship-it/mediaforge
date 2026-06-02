@@ -313,6 +313,25 @@ async def clear_draft(name: str) -> dict:
     return {"removed": removed, "status": bundles.bundle_status(name)}
 
 
+@router.post("/bundles/{name}/open_draft")
+async def open_draft(name: str) -> dict:
+    """결과(draft) 폴더를 파일 탐색기로 연다 (로컬 앱이라 서버=내 PC)."""
+    draft = bundles.bundle_path(name) / "draft"
+    draft.mkdir(parents=True, exist_ok=True)
+    import sys
+    try:
+        if sys.platform.startswith("win"):
+            import os
+            os.startfile(str(draft))  # type: ignore[attr-defined]
+        elif sys.platform == "darwin":
+            subprocess.Popen(["open", str(draft)])
+        else:
+            subprocess.Popen(["xdg-open", str(draft)])
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(500, f"폴더 열기 실패: {exc}") from exc
+    return {"opened": str(draft)}
+
+
 @router.get("/probe")
 async def probe() -> dict:
     return await mp4_probe()
