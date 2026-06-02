@@ -54,6 +54,18 @@ def find_script(bundle_dir: Path) -> Path | None:
     return hits[0] if hits else None
 
 
+def _audio_duration(path: Path | None) -> float | None:
+    """오디오 길이(초). 실패하면 None. (cue 자동 채우기용)"""
+    if path is None or not path.exists():
+        return None
+    try:
+        import soundfile as sf
+        info = sf.info(str(path))
+        return round(info.frames / float(info.samplerate), 3)
+    except Exception:
+        return None
+
+
 def _find_prefix_file(folder: Path, chap: str, scene: int, exts: tuple[str, ...],
                       suffix: str = "") -> Path | None:
     """이 씬에 해당하는 파일 하나를 찾아 경로를 반환 (없으면 None)."""
@@ -93,6 +105,8 @@ def bundle_status(name: str) -> dict:
             scenes_out.append({
                 "scene": idx,
                 "title": sc.get("title") or "",
+                "narration_text": sc.get("narration_text") or "",
+                "srt_text": sc.get("srt_text"),
                 "narration_seconds": sc.get("narration_seconds"),
                 "has_image": img is not None,
                 "has_audio": aud is not None,
@@ -100,6 +114,7 @@ def bundle_status(name: str) -> dict:
                 "image_file": img.name if img else None,
                 "audio_file": aud.name if aud else None,
                 "subtitle_file": sub.name if sub else None,
+                "audio_duration": _audio_duration(aud),
             })
 
     draft_mp4 = root / "draft" / f"ch{chap}_final.mp4" if chap else None

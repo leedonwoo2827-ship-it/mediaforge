@@ -20,7 +20,8 @@ from . import bundles
 from .jobs import Job, get_registry
 from .render import probe as mp4_probe
 from .render import render as mp4_render
-from .synth import synthesize
+from .synth import save_scene_cues, synthesize
+from .synth import synth_scene_text as synthesize_scene_text
 
 router = APIRouter()
 
@@ -220,6 +221,52 @@ async def post_oneclick(name: str) -> dict:
     job = get_registry().create(kind="oneclick", bundle=name)
     _spawn(_job_oneclick(job, name))
     return {"job_id": job.job_id}
+
+
+class SceneSynthReq(BaseModel):
+    scene: int
+    text: str
+    srt_text: str | None = None
+    voice: str | None = None
+    speed: float | None = None
+
+
+class SceneSrtReq(BaseModel):
+    scene: int
+    cues: list[dict]
+
+
+@router.post("/bundles/{name}/scene_synth")
+async def scene_synth(name: str, req: SceneSynthReq) -> dict:
+    """한 씬만 (편집한 텍스트로) 음성+자막 재생성 — 번들에 직접 기록."""
+    try:
+        return await synthesize_scene_text(
+            bundles.bundle_path(name), req.scene, req.text,
+            srt_text=req.srt_text, voice=req.voice, speed=req.speed,
+        )
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
+@router.post("/bundles/{name}/scene_srt")
+async def scene_srt(name: str, req: SceneSrtReq) -> dict:
+    """편집한 자막 큐(시간/텍스트) 저장 + 통합 SRT 갱신."""
+    try:
+        return save_scene_cues(bundles.bundle_path(name), req.scene, req.cues)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
+@router.post("/bundles/{name}/to_pronunciation")
+async def to_pron(payload: dict) -> dict:
+    """발음 사전 + 약어/연도/단위 변환 미리보기 (한국어 발음 전환 버튼용)."""
+    from voicewright import settings as settings_module
+    from voicewright.pronunciation import load_pronunciation_map
+    text = str(payload.get("text", ""))
+    if not text.strip():
+        return {"text": ""}
+    pmap = load_pronunciation_map(settings_module.load().pronunciation_map_path)
+    return {"text": pmap.apply(text, spell_unknown_acronyms=True, convert_years=True)}
 
 
 @router.get("/jobs/{job_id}")

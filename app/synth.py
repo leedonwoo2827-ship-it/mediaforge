@@ -16,10 +16,20 @@ from pathlib import Path
 
 import soundfile as sf
 
+from voicewright import settings as settings_module
+from voicewright.audio_io import write_wav
 from voicewright.batch import parse_script, run_batch
 from voicewright.engine import Engine
-from voicewright.paths import narration_filename, normalize_chapter_id
-from voicewright.srt import merge_scene_cues, parse_srt_cues
+from voicewright.paths import narration_filename, normalize_chapter_id, srt_filename
+from voicewright.srt import (
+    Cue,
+    auto_time_cues,
+    make_multi_srt,
+    merge_scene_cues,
+    parse_srt_cues,
+    split_into_cues,
+)
+from voicewright.voices import ALL_VOICE_CODES, load_voice_map
 
 _PER_SCENE_SRT_RE = re.compile(r"^ch[^_]+_(\d+)_narration\.srt$")
 
@@ -137,3 +147,107 @@ def rebuild_chapter_srt(bundle_dir: str | Path) -> Path | None:
     out = sub_dir / f"ch{chapter_id}.srt"
     out.write_text(text, encoding="utf-8")
     return out
+
+
+def _resolve_voice(bundle: Path, scene: int, voice: str | None) -> str:
+    """씬 보이스 결정: 명시값 → 대본의 voice_style → 기본."""
+    s = settings_module.load()
+    vmap = load_voice_map(s.voice_map_path)
+    if voice:
+        code = voice.upper()
+        if code not in ALL_VOICE_CODES:
+            raise ValueError(f"알 수 없는 보이스: {voice}")
+        return code
+    style = None
+    sp = find_script(bundle)
+    if sp:
+        try:
+            sc = parse_script(sp.read_bytes())
+            for x in sc.scenes:
+                if x.scene == int(scene):
+                    style = x.voice_style
+                    break
+        except Exception:
+            pass
+    code, _ = vmap.resolve(style)
+    return code
+
+
+async def synth_scene_text(
+    bundle_dir: str | Path,
+    scene: int,
+    text: str,
+    *,
+    srt_text: str | None = None,
+    voice: str | None = None,
+    speed: float | None = None,
+    total_step: int | None = None,
+) -> dict:
+    """한 씬만, 주어진 텍스트로 음성+자막을 (번들에 직접) 다시 만든다.
+
+    - 음성(TTS)에는 발음 사전이 자동 적용된다(엔진 내부).
+    - 자막(SRT)에는 원문(srt_text 없으면 text)을 쓰고, **실측 음성 길이**에 맞춰
+      글자수 비례로 타이밍을 부여한다 → 발음변환/괄호제거로 인한 싱크 어긋남 자동 보정.
+    """
+    bundle = Path(bundle_dir).resolve()
+    chap = _bundle_chapter_id(bundle)
+    if chap is None:
+        raise ValueError(f"번들 이름에서 챕터를 찾지 못함: {bundle.name}")
+    if not text.strip():
+        raise ValueError("빈 텍스트입니다.")
+
+    engine = await Engine.get()
+    code = _resolve_voice(bundle, scene, voice)
+    wav = await engine.synth(text, voice_code=code, total_step=total_step, speed=speed)
+
+    audio_dir = bundle / "audio"
+    audio_dir.mkdir(parents=True, exist_ok=True)
+    wav_path = audio_dir / narration_filename(chap, int(scene))
+    write_wav(wav_path, wav, engine.sample_rate)
+
+    dur = float(len(wav)) / float(engine.sample_rate)
+    body = (srt_text or text).strip()
+    cues = auto_time_cues(split_into_cues(body), dur)
+    sub_dir = bundle / "subtitles"
+    sub_dir.mkdir(parents=True, exist_ok=True)
+    (sub_dir / srt_filename(chap, int(scene))).write_text(make_multi_srt(cues), encoding="utf-8")
+    rebuild_chapter_srt(bundle)
+
+    return {
+        "scene": int(scene),
+        "voice": code,
+        "duration": round(dur, 3),
+        "audio_file": wav_path.name,
+        "subtitle_file": srt_filename(chap, int(scene)),
+        "cues": [{"text": c.text, "start": c.start, "end": c.end} for c in cues],
+    }
+
+
+def save_scene_cues(bundle_dir: str | Path, scene: int, cues_data: list[dict]) -> dict:
+    """사용자가 편집한 자막 큐(시작/끝/텍스트)를 per-scene SRT로 저장 + 통합 SRT 갱신."""
+    bundle = Path(bundle_dir).resolve()
+    chap = _bundle_chapter_id(bundle)
+    if chap is None:
+        raise ValueError(f"번들 이름에서 챕터를 찾지 못함: {bundle.name}")
+    cues: list[Cue] = []
+    prev = -1.0
+    for i, c in enumerate(cues_data):
+        t = str(c.get("text", "")).strip()
+        if not t:
+            continue
+        start = round(float(c.get("start", 0.0)), 3)
+        end = round(float(c.get("end", 0.0)), 3)
+        if start < 0 or end < start:
+            raise ValueError(f"{i+1}번 자막 시간이 잘못됨 (start={start}, end={end})")
+        if start < prev - 1e-3:
+            raise ValueError(f"{i+1}번 자막이 앞 자막과 겹침")
+        prev = end
+        cues.append(Cue(text=t, start=start, end=end))
+    if not cues:
+        raise ValueError("저장할 자막이 없습니다.")
+
+    sub_dir = bundle / "subtitles"
+    sub_dir.mkdir(parents=True, exist_ok=True)
+    (sub_dir / srt_filename(chap, int(scene))).write_text(make_multi_srt(cues), encoding="utf-8")
+    rebuild_chapter_srt(bundle)
+    return {"scene": int(scene), "cue_count": len(cues)}
