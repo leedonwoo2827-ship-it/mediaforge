@@ -362,14 +362,23 @@ function renderResult(st){
   } else { el.innerHTML='<span class="muted">아직 합성된 영상이 없습니다. [🎬 풀 렌더] 또는 [⚡ 한 번에 만들기].</span>'; }
 }
 
-async function pollJob(id, done){
+function topBtns(){ return ['#synthBtn','#renderBtn','#dryBtn','#oneclickBtn','#clearBtn'].map(s=>$(s)).filter(Boolean); }
+function setBusy(on, activeBtn){
+  topBtns().forEach(b=>{ b.disabled=on; });
+  if(activeBtn){
+    if(on){ activeBtn._old=activeBtn.textContent; activeBtn.textContent='⏳ 진행 중…'; }
+    else if(activeBtn._old!=null){ activeBtn.textContent=activeBtn._old; }
+  }
+}
+async function pollJob(id, activeBtn, done){
+  setBusy(true, activeBtn);
   clearInterval(state.poll);
   state.poll=setInterval(async()=>{
     let j; try{ j=await api(`/api/mf/jobs/${id}`); }catch(e){ return; }
-    $('#stageText').textContent = j.stage||'';
+    $('#stageText').textContent = (j.status==='running'?'⏳ ':'') + (j.stage||'');
     setBar(j.completed, j.total); setLog(j.log);
     if(j.status==='done' || j.status==='error'){
-      clearInterval(state.poll);
+      clearInterval(state.poll); setBusy(false, activeBtn);
       if(j.status==='error'){ toast('실패: '+(j.error||''), true); }
       else { toast('완료'); }
       await refresh(); if(done) done(j);
@@ -387,12 +396,12 @@ $('#importBtn').onclick = async()=>{ try{
   const r=await api(`/api/mf/bundles/${state.bundle}/import_images`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({prefer:$('#preferSel').value})});
   toast(`이미지 ${r.imported.length}개 씬 가져옴`); state.status=r.status; await refresh();
 }catch(e){ toast(e.message,true); } };
-$('#synthBtn').onclick = async()=>{ const r=await api(`/api/mf/bundles/${state.bundle}/synth`,{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'}); pollJob(r.job_id); };
-$('#renderBtn').onclick = async()=>{ const r=await api(`/api/mf/bundles/${state.bundle}/render`,{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'}); pollJob(r.job_id); };
-$('#dryBtn').onclick = async()=>{ const r=await api(`/api/mf/bundles/${state.bundle}/render`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({dry_run:true})}); pollJob(r.job_id); };
+$('#synthBtn').onclick = async(e)=>{ const r=await api(`/api/mf/bundles/${state.bundle}/synth`,{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'}); pollJob(r.job_id, e.currentTarget); };
+$('#renderBtn').onclick = async(e)=>{ const r=await api(`/api/mf/bundles/${state.bundle}/render`,{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'}); pollJob(r.job_id, e.currentTarget); };
+$('#dryBtn').onclick = async(e)=>{ const r=await api(`/api/mf/bundles/${state.bundle}/render`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({dry_run:true})}); pollJob(r.job_id, e.currentTarget); };
 $('#clearBtn').onclick = async()=>{ if(!confirm('기존 풀렌더 결과(영상·자막·프로젝트)를 삭제할까요?')) return;
   try{ const r=await api(`/api/mf/bundles/${state.bundle}/clear_draft`,{method:'POST'}); toast(`삭제됨 (${r.removed.length}개)`); state.status=r.status; await refresh(); }catch(e){ toast(e.message,true); } };
-$('#oneclickBtn').onclick = async()=>{ const r=await api(`/api/mf/bundles/${state.bundle}/oneclick`,{method:'POST'}); pollJob(r.job_id); };
+$('#oneclickBtn').onclick = async(e)=>{ const r=await api(`/api/mf/bundles/${state.bundle}/oneclick`,{method:'POST'}); pollJob(r.job_id, e.currentTarget); };
 
 document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{
   document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));
